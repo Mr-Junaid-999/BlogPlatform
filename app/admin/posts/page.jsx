@@ -12,6 +12,11 @@ async function getPosts() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  if (!user) {
+    return [];
+  }
+
+  // First, fetch posts with basic info
   const { data: posts, error } = await supabase
     .from("posts")
     .select(
@@ -27,9 +32,7 @@ async function getPosts() {
           name,
           slug
         )
-      ),
-      likes(count),
-      comments:comments(count)
+      )
     `
     )
     .eq("author_id", user.id)
@@ -40,7 +43,66 @@ async function getPosts() {
     return [];
   }
 
-  return posts || [];
+  if (!posts || posts.length === 0) {
+    return [];
+  }
+
+  // Get all post IDs for batch queries
+  const postIds = posts.map((post) => post.id);
+
+  // Fetch likes count for all posts
+  const { data: likesData, error: likesError } = await supabase
+    .from("likes")
+    .select("post_id")
+    .in("post_id", postIds);
+
+  console.log("likesData", likesData);
+
+  // Fetch comments count for all posts
+  const { data: commentsData, error: commentsError } = await supabase
+    .from("comments")
+    .select("post_id, status")
+    .in("post_id", postIds);
+
+  console.log("commentsData", commentsData);
+
+  if (likesError) {
+    console.error("Error fetching likes:", likesError);
+  }
+
+  if (commentsError) {
+    console.error("Error fetching comments:", commentsError);
+  }
+
+  // Count likes and comments for each post
+  const likesCountMap = {};
+  const commentsCountMap = {};
+
+  // Count likes
+  if (likesData) {
+    likesData.forEach((like) => {
+      likesCountMap[like.post_id] = (likesCountMap[like.post_id] || 0) + 1;
+    });
+  }
+
+  // Count approved comments only
+  if (commentsData) {
+    commentsData.forEach((comment) => {
+      if (comment.status === "approved") {
+        commentsCountMap[comment.post_id] =
+          (commentsCountMap[comment.post_id] || 0) + 1;
+      }
+    });
+  }
+
+  // Combine all data
+  const postsWithCounts = posts.map((post) => ({
+    ...post,
+    likes: [{ count: likesCountMap[post.id] || 0 }],
+    comments: [{ count: commentsCountMap[post.id] || 0 }],
+  }));
+
+  return postsWithCounts;
 }
 
 export default async function PostsPage() {
@@ -100,8 +162,8 @@ export default async function PostsPage() {
                           {new Date(post.published_at).toLocaleDateString()}
                         </span>
                       )}
-                      <span>{post.likes?.length || 0} likes</span>
-                      <span>{post.comments?.length || 0} comments</span>
+                      <span>{post.likes?.[0]?.count || 0} likes</span>
+                      <span>{post.comments?.[0]?.count || 0} comments</span>
                     </div>
 
                     {post.tags && post.tags.length > 0 && (

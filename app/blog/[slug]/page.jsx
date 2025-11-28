@@ -1,18 +1,24 @@
+//app/blog/[slug]/page.jsx
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import { CommentForm } from "@/components/CommentForm";
 import { CommentList } from "@/components/CommentList";
-import { Button } from "@/components/ui/button";
-import { toggleLike } from "@/app/actions";
+import LikeButton from "@/components/ui/LikeButton";
 
-async function getPost(Slug) {
-  const slug = await Slug;
+async function getPost(params) {
+  const resolvedParams = await params;
+  const slugValue = resolvedParams.slug;
 
   try {
     const supabase = await createClient();
 
-    const { data: post, error } = await supabase
+    // Get current user session
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { data: posts, error } = await supabase
       .from("posts")
       .select(
         `
@@ -29,48 +35,86 @@ async function getPost(Slug) {
             name,
             slug
           )
-        ),
-        likes(count),
-        comments:comments!parent_id (
-          id,
-          content,
-          author_name,
-          author_email,
-          post_id,
-          parent_id,
-          status,
-          created_at
         )
       `
       )
-      .eq("slug", slug)
-      .eq("status", "published")
-      .single();
+      .eq("slug", slugValue)
+      .in("status", ["published", "draft"]) // Both published and draft posts
+      .limit(1);
 
-    if (error || !post) {
+    if (error) {
+      console.error("Query error:", error);
       return null;
     }
 
-    return post;
+    if (!posts || posts.length === 0) {
+      return null;
+    }
+
+    const post = posts[0];
+
+    // Additional security: If post is draft, only author or admin can view
+    if (post.status === "draft") {
+      if (!user) {
+        return null;
+      }
+
+      // Check if current user is the author or has admin role
+      const isAuthor = post.author_id === user.id;
+      // You might want to check user role here if you have roles implemented
+
+      if (!isAuthor) {
+        return null;
+      }
+    }
+
+    // Get likes count for this post
+    const { count: likesCount, error: likesError } = await supabase
+      .from("likes")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", post.id);
+
+    if (likesError) {
+      console.error("Likes count error:", likesError);
+    }
+
+    // Check if current user has liked this post
+    let userHasLiked = false;
+    if (user) {
+      const { data: userLike, error: userLikeError } = await supabase
+        .from("likes")
+        .select("id")
+        .eq("post_id", post.id)
+        .eq("user_id", user.id)
+        .single();
+
+      if (userLikeError && userLikeError.code !== "PGRST116") {
+        console.error("User like check error:", userLikeError);
+      }
+
+      userHasLiked = !!userLike;
+    }
+
+    // Fetch comments separately using post_id
+    const { data: comments = [] } = await supabase
+      .from("comments")
+      .select("*")
+      .eq("post_id", post.id);
+
+    return {
+      ...post,
+      comments,
+      userHasLiked,
+      likesCount: likesCount || 0,
+    };
   } catch (error) {
     console.error("Error fetching post:", error);
     return null;
   }
 }
 
-// Like Button Client Component (Separate banayein)
-function LikeButton({ postId, initialLikes }) {
-  return (
-    <form action={toggleLike.bind(null, postId)}>
-      <Button type="submit" variant="outline" size="sm">
-        ❤️ {initialLikes} Likes
-      </Button>
-    </form>
-  );
-}
-
 export default async function PostPage({ params }) {
-  const post = await getPost(params.slug);
+  const post = await getPost(params);
 
   if (!post) {
     notFound();
@@ -104,7 +148,8 @@ export default async function PostPage({ params }) {
             </div>
             <LikeButton
               postId={post.id}
-              initialLikes={post.likes?.length || 0}
+              initialLikes={post.likesCount}
+              isInitiallyLiked={post.userHasLiked}
             />
           </div>
 
@@ -145,7 +190,8 @@ export default async function PostPage({ params }) {
           <div className="flex items-center justify-between">
             <LikeButton
               postId={post.id}
-              initialLikes={post.likes?.length || 0}
+              initialLikes={post.likesCount}
+              isInitiallyLiked={post.userHasLiked}
             />
             <div className="text-sm text-gray-500">
               Published on{" "}

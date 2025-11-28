@@ -7,7 +7,7 @@ import { SearchBar } from "@/components/SearchBar";
 // Server page
 export default async function BlogPage({ searchParams }) {
   const supabase = await createClient();
-  const search = searchParams.search || "";
+  const search = await searchParams?.search;
 
   // Fetch posts
   let query = supabase
@@ -16,8 +16,7 @@ export default async function BlogPage({ searchParams }) {
       `
         *,
         profiles:author_id ( username, display_name ),
-        tags:post_tags ( tags ( id, name, slug ) ),
-        likes(count)
+        tags:post_tags ( tags ( id, name, slug ) )
       `
     )
     .eq("status", "published")
@@ -32,6 +31,21 @@ export default async function BlogPage({ searchParams }) {
   if (postsError) {
     console.error("Error fetching posts:", postsError.message);
   }
+
+  // Fetch likes count for each post separately
+  const postsWithLikes = await Promise.all(
+    posts.map(async (post) => {
+      const { count, error } = await supabase
+        .from("likes")
+        .select("*", { count: "exact", head: true })
+        .eq("post_id", post.id);
+
+      return {
+        ...post,
+        likesCount: count || 0,
+      };
+    })
+  );
 
   // Fetch tags
   const { data: tags = [], error: tagsError } = await supabase
@@ -53,21 +67,11 @@ export default async function BlogPage({ searchParams }) {
               Blog Posts
             </h1>
 
-            {/* Search form works using GET on server */}
-            <form className="mb-4">
-              <input
-                name="search"
-                defaultValue={search}
-                placeholder="Search posts..."
-                className="w-full border px-3 py-2 rounded-md"
-              />
-            </form>
-
             <SearchBar />
           </div>
 
           <div className="space-y-6">
-            {posts.map((post) => (
+            {postsWithLikes.map((post) => (
               <Card key={post.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <CardTitle className="text-xl">
@@ -91,7 +95,7 @@ export default async function BlogPage({ searchParams }) {
                         ? new Date(post.published_at).toLocaleDateString()
                         : "Draft"}
                     </span>
-                    <span>{post.likes?.length || 0} likes</span>
+                    <span>{post.likesCount} likes</span>
                   </div>
                 </CardHeader>
 
@@ -124,7 +128,7 @@ export default async function BlogPage({ searchParams }) {
               </Card>
             ))}
 
-            {posts.length === 0 && (
+            {postsWithLikes.length === 0 && (
               <div className="text-center py-12">
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   No posts found

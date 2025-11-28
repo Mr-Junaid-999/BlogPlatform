@@ -15,11 +15,8 @@ export default async function AdminLayout({ children }) {
     }
 
     if (!session) {
-      console.log("No session found, redirecting to login");
       redirect("/login");
     }
-
-    console.log("Admin access granted for:", session.user.email);
   } catch (error) {
     console.error("Auth check failed:", error);
     redirect("/login");

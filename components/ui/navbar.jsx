@@ -13,8 +13,6 @@ export async function Navbar() {
   } = await supabase.auth.getSession();
   const user = session?.user || null;
 
-  console.log("Server Navbar - User:", user?.email);
-
   // Server Action for sign out
   async function handleSignOut() {
     "use server";

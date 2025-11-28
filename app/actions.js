@@ -1,3 +1,4 @@
+//app/actions.js
 "use server";
 
 import { createClient } from "@/lib/supabase-server";
@@ -17,6 +18,7 @@ const postSchema = z.object({
 });
 
 const commentSchema = z.object({
+  author_name: z.string().min(1, "Name is required"),
   content: z.string().min(1, "Comment is required"),
   post_id: z.string().uuid("Invalid post ID"),
   author_email: z.string().email("Invalid email"),
@@ -83,7 +85,6 @@ export async function signOut() {
     throw new Error(error.message);
   }
 
-  console.log("Sign out successful");
   redirect("/");
 }
 
@@ -319,9 +320,46 @@ export async function deleteComment(id) {
 
   revalidatePath("/admin/comments");
 }
-
+//app/actions.js
 // Like Actions
-export async function toggleLike(postId) {
+// export async function toggleLike(postId) {
+//   const supabase = await createClient();
+//   const {
+//     data: { user },
+//     error: userError,
+//   } = await supabase.auth.getUser();
+
+//   if (userError || !user) {
+//     throw new Error("User not authenticated");
+//   }
+
+//   const { data: existingLike } = await supabase
+//     .from("likes")
+//     .select("id")
+//     .eq("post_id", postId)
+//     .eq("user_id", user.id)
+//     .single();
+
+//   if (existingLike) {
+//     await supabase.from("likes").delete().eq("id", existingLike.id);
+//   } else {
+//     await supabase.from("likes").insert({
+//       post_id: postId,
+//       user_id: user.id,
+//     });
+//   }
+
+//   revalidatePath(`/blog/${postId}`);
+// }
+// app/actions.js
+
+export async function toggleLike(formData) {
+  const postId = formData.get("postId");
+
+  if (!postId) {
+    throw new Error("Post ID is required");
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -332,6 +370,7 @@ export async function toggleLike(postId) {
     throw new Error("User not authenticated");
   }
 
+  // Check if user already liked the post
   const { data: existingLike } = await supabase
     .from("likes")
     .select("id")
@@ -340,13 +379,25 @@ export async function toggleLike(postId) {
     .single();
 
   if (existingLike) {
-    await supabase.from("likes").delete().eq("id", existingLike.id);
+    // Unlike
+    const { error } = await supabase
+      .from("likes")
+      .delete()
+      .eq("id", existingLike.id);
+
+    if (error) throw error;
   } else {
-    await supabase.from("likes").insert({
+    // Like
+    const { error } = await supabase.from("likes").insert({
       post_id: postId,
       user_id: user.id,
     });
+
+    if (error) throw error;
   }
 
-  revalidatePath(`/blog/${postId}`);
+  // Properly revalidate the path
+  revalidatePath(`/blog/[slug]`);
+
+  return { success: true, postId };
 }
