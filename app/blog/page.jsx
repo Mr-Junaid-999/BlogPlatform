@@ -1,13 +1,15 @@
+// app/blog/page.jsx (Server Component)
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase-server";
-import { SearchBar } from "@/components/SearchBar";
+import { Search, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
-// Server page
 export default async function BlogPage({ searchParams }) {
   const supabase = await createClient();
-  const search = await searchParams?.search;
+  const Params = await searchParams;
+  const search = Params.search;
 
   // Fetch posts
   let query = supabase
@@ -67,7 +69,47 @@ export default async function BlogPage({ searchParams }) {
               Blog Posts
             </h1>
 
-            <SearchBar />
+            {/* Search Form with Clear Button */}
+            <div className="relative max-w-full">
+              <form action="/blog" method="GET" className="flex gap-2 w-full">
+                <div className="relative flex-1 w-full">
+                  <Input
+                    type="text"
+                    name="search"
+                    placeholder="Search posts..."
+                    className="flex-1 pr-10"
+                    defaultValue={search}
+                  />
+                  {/* Clear Button inside Input */}
+                  {search && (
+                    <Link
+                      href="/blog"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </Link>
+                  )}
+                </div>
+                <Button type="submit" size="icon">
+                  <Search className="h-4 w-4" />
+                </Button>
+              </form>
+            </div>
+
+            {/* Search Results Info */}
+            {search && (
+              <div className="flex items-center gap-2 text-sm mt-3">
+                <span className="text-gray-600">
+                  Showing {postsWithLikes.length} results for:{" "}
+                  <strong>"{search}"</strong>
+                </span>
+                <Link href="/blog">
+                  <Button variant="outline" size="sm">
+                    Clear All
+                  </Button>
+                </Link>
+              </div>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -135,9 +177,14 @@ export default async function BlogPage({ searchParams }) {
                 </h3>
                 <p className="text-gray-600">
                   {search
-                    ? "Try adjusting your search terms."
+                    ? `No posts found for "${search}". Try adjusting your search terms.`
                     : "Check back later for new posts."}
                 </p>
+                {search && (
+                  <Link href="/blog" className="mt-4 inline-block">
+                    <Button variant="outline">View All Posts</Button>
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -152,19 +199,34 @@ export default async function BlogPage({ searchParams }) {
             <CardContent>
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
-                  <Link
+                  <div
                     key={tag.id}
-                    href={`/blog/tag/${tag.slug}`}
                     className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm hover:bg-blue-200"
                   >
                     {tag.name}
-                  </Link>
+                  </div>
                 ))}
 
                 {tags.length === 0 && (
                   <p className="text-gray-500 text-sm">No tags yet</p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Search Tips */}
+
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="text-lg">Search Tips</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-gray-600 space-y-2">
+                <li>• Try different keywords</li>
+                <li>• Check your spelling</li>
+                <li>• Use more general terms</li>
+                <li>• Browse by tags instead</li>
+              </ul>
             </CardContent>
           </Card>
         </div>

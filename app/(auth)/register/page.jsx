@@ -1,52 +1,99 @@
-"use client";
-
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { signUp } from "@/app/actions";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase-server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { z } from "zod";
 
-// Zod schema for validation
-const registerSchema = z.object({
-  display_name: z.string().min(1, "Display name is required"),
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
+export default async function RegisterPage({ searchParams }) {
+  const errorParams = await searchParams;
+  const error = errorParams?.error;
+  const successParams = await searchParams;
+  const success = successParams?.success;
 
-export default function RegisterPage() {
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  async function registerAction(formData) {
+    "use server";
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(registerSchema),
-  });
+    const supabase = await createClient();
+    const email = formData.get("email");
+    const password = formData.get("password");
+    const username = formData.get("username");
+    const display_name = formData.get("display_name");
 
-  const onSubmit = async (data) => {
-    setIsLoading(true);
-    setError("");
+    // Basic validation
+    if (!email || !password || !username || !display_name) {
+      redirect("/register?error=All fields are required");
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.toString())) {
+      redirect("/register?error=Please enter a valid email address");
+    }
+
+    // Username validation
+    if (username.toString().length < 3) {
+      redirect("/register?error=Username must be at least 3 characters");
+    }
+
+    // Password validation
+    if (password.toString().length < 6) {
+      redirect("/register?error=Password must be at least 6 characters");
+    }
 
     try {
-      const formData = new FormData();
-      formData.append("email", data.email);
-      formData.append("password", data.password);
-      formData.append("username", data.username);
-      formData.append("display_name", data.display_name);
-      await signUp(formData);
+      // Check if username already exists
+      const { data: existingUser } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("username", username.toString())
+        .single();
+
+      if (existingUser) {
+        redirect("/register?error=Username already exists");
+      }
+
+      // Create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: email.toString(),
+        password: password.toString(),
+        options: {
+          data: {
+            username: username.toString(),
+            display_name: display_name.toString(),
+          },
+        },
+      });
+
+      if (authError) {
+        redirect(`/register?error=${encodeURIComponent(authError.message)}`);
+      }
+
+      if (authData.user) {
+        // Create profile
+        const { error: profileError } = await supabase.from("profiles").insert([
+          {
+            id: authData.user.id,
+            username: username.toString(),
+            display_name: display_name.toString(),
+            email: email.toString(),
+          },
+        ]);
+
+        if (profileError) {
+          console.error("Profile creation error:", profileError);
+          redirect("/register?error=Account created but profile setup failed");
+        }
+
+        redirect(
+          "/register?success=Account created successfully! Please check your email for verification."
+        );
+      }
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
+      console.error("Registration error:", err);
+      redirect("/register?error=An unexpected error occurred");
     }
-  };
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -57,7 +104,15 @@ export default function RegisterPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form action={registerAction} className="space-y-4">
+            {/* Success Message */}
+            {success && (
+              <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded">
+                {success}
+              </div>
+            )}
+
+            {/* Error Message */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
                 {error}
@@ -67,61 +122,48 @@ export default function RegisterPage() {
             <div>
               <Input
                 type="text"
+                name="display_name"
                 placeholder="Display Name"
-                {...register("display_name")}
                 className="w-full"
+                required
+                minLength={1}
               />
-              {errors.display_name && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.display_name.message}
-                </p>
-              )}
             </div>
 
             <div>
               <Input
                 type="text"
+                name="username"
                 placeholder="Username"
-                {...register("username")}
                 className="w-full"
+                required
+                minLength={3}
               />
-              {errors.username && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.username.message}
-                </p>
-              )}
             </div>
 
             <div>
               <Input
                 type="email"
+                name="email"
                 placeholder="Email address"
-                {...register("email")}
                 className="w-full"
+                required
               />
-              {errors.email && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.email.message}
-                </p>
-              )}
             </div>
 
             <div>
               <Input
                 type="password"
+                name="password"
                 placeholder="Password"
-                {...register("password")}
                 className="w-full"
+                required
+                minLength={6}
               />
-              {errors.password && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.password.message}
-                </p>
-              )}
             </div>
 
-            <Button type="submit" disabled={isLoading} className="w-full">
-              {isLoading ? "Creating account..." : "Create Account"}
+            <Button type="submit" className="w-full">
+              Create Account
             </Button>
 
             <div className="text-center text-sm text-gray-600">
